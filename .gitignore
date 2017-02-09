@@ -9,3 +9,5 @@ local_settings.py
 
 # pyenv
 .python-version
+.idea
+.DS_Store

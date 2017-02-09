@@ -1,0 +1,7 @@
+Django==1.9.6
+gevent==1.1.1
+greenlet==0.4.9
+psycopg2==2.6.1
+six==1.10.0
+python-bitcoinlib==0.7.0
+django-nose==1.4.4

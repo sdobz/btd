@@ -1,0 +1,55 @@
+version: "2"
+
+volumes:
+  db: {}
+  bitcoin: {}
+
+services:
+  listener:
+    build: ./django
+    restart: always
+    links:
+      - db
+      - bitcoin
+    environment:
+      - DJANGO_SETTINGS_MODULE
+    env_file: env
+    volumes:
+      - ./django:/opt/listener/
+    working_dir: /opt/listener/
+    command: python manage.py listen
+
+  manage:
+    build: ./django
+    restart: "no"
+    links:
+      - db
+      - bitcoin
+    environment:
+      - DJANGO_SETTINGS_MODULE
+    env_file: env
+    volumes:
+      - ./django:/opt/listener/
+    working_dir: /opt/listener/
+
+  db:
+    restart: always
+    image: postgres:latest
+    volumes:
+      - db:/var/lib/postgresql/data
+    env_file: env
+
+  bitcoin:
+    restart: always
+    build: ./bitcoind
+    env_file: env
+    volumes:
+      - bitcoin:/data
+    ports:
+      - "8333"
+      - "18333"
+    expose:
+      - "8332"
+      - "18332"
+      - "8330"
+

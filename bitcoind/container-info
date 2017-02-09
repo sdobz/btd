@@ -1,0 +1,21 @@
+#!/bin/bash
+
+CONTAINERID=$(docker ps | grep $1 | tr -s ' ' | cut -d' ' -f 1 )
+echo Container $CONTAINERID
+
+IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $CONTAINERID)
+echo IP $IP
+
+SANDBOXKEY=$(docker inspect --format='{{.NetworkSettings.SandboxKey}}' $CONTAINERID)
+# echo Network sandbox key $SANDBOXKEY
+
+DOCKERPID=$(ps aux | grep dockerd | grep -v grep | tr -s ' ' | cut -d ' ' -f 2)
+# echo Docker PID $DOCKERPID
+
+PEERIFINDEX=$(nsenter -m -t $DOCKERPID nsenter --net=$SANDBOXKEY ethtool -S eth0 | tail -n 1 | tr -s ' ' | cut -d' ' -f 3)
+# echo peer_ifindex $PEERIFINDEX
+
+
+INTERFACE=$(ip link | grep "$PEERIFINDEX: " | cut -d ' '  -f 2 | cut -d '@' -f 1)
+echo Interface $INTERFACE
+

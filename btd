@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+
+SERVICES="listener db bitcoin"
+BUILDONLY="manage"
+
+sub_help() {
+    echo "Usage: $ProgName <subcommand> [options]\n"
+    echo "Subcommands:"
+    echo "    start               - Install and start (not restart) all services"
+    echo "    stop                - Stop and clean containers"
+    echo "    restart <container> - Restart service"
+    echo "    rebuild <container> - Rebuild and restart container"
+    echo "    manage <args>       - Run django manage"
+    echo "    compose <args>      - Arguments passed to docker-compose"
+    echo "    logs <container>    - Show and follow logs"
+    echo "    bash <container>    - Attach bash to a running container"
+    echo ""
+}
+
+sub_start() {
+    sub_compose build ${SERVICES} ${BUILDONLY}
+    sub_compose up --remove-orphans -d ${SERVICES}
+    sub_manage 'migrate'
+    sub_restart listener
+}
+
+sub_stop() {
+    sub_compose down
+}
+
+sub_restart() {
+    sub_compose restart $@
+}
+
+sub_rebuild() {
+    sub_compose build $@ && sub_compose up -d $@
+}
+
+
+sub_manage() {
+    MANAGE="python manage.py $@"
+
+    sub_compose run --rm -w /opt/listener manage $MANAGE
+}
+
+sub_rpc() {
+    source ./env
+
+    sub_compose exec bitcoin bitcoin-cli -testnet -rpcuser=${BITCOIN_RPC_USER} -rpcpassword="${BITCOIN_RPC_PASSWORD}" $@
+}
+
+sub_compose() {
+    docker-compose ${COMPOSE} $@
+}
+
+sub_logs() {
+    sub_compose logs --tail=50 -f $@
+}
+
+sub_bash() {
+    sub_compose exec $@ bash
+}
+
+main() {
+    subcommand=$1
+    case $subcommand in
+        "" | "-h" | "--help")
+            sub_help
+            ;;
+        *)
+            shift
+            sub_${subcommand} $@
+            if [ $? = 127 ]; then
+                echo "Error: '$subcommand' is not a known subcommand." >&2
+                echo "       Run '$ProgName --help' for a list of known subcommands." >&2
+                exit 1
+            fi
+            ;;
+    esac
+}
+
+DM="default"
+COMPOSE="-f docker-compose.yml"
+
+main $@

@@ -1,0 +1,4 @@
+gevent==1.2.1
+greenlet==0.4.12
+python-bitcoinlib==0.7.0
+pyzmq==16.0.2

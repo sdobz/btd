@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
-SERVICES="listener db bitcoin"
-BUILDONLY="manage"
+SERVICES="bitcoin"
 
 sub_help() {
     echo "Usage: $ProgName <subcommand> [options]\n"
@@ -18,10 +17,8 @@ sub_help() {
 }
 
 sub_start() {
-    sub_compose build ${SERVICES} ${BUILDONLY}
+    sub_compose build ${SERVICES}
     sub_compose up --remove-orphans -d ${SERVICES}
-    sub_manage 'migrate'
-    sub_restart listener
 }
 
 sub_stop() {
@@ -34,13 +31,6 @@ sub_restart() {
 
 sub_rebuild() {
     sub_compose build $@ && sub_compose up -d $@
-}
-
-
-sub_manage() {
-    MANAGE="python manage.py $@"
-
-    sub_compose run --rm -w /opt/listener manage $MANAGE
 }
 
 sub_rpc() {

@@ -2,11 +2,10 @@ import zmq.green as zmq
 
 from gevent import Greenlet
 
-from ..bitcoind.rpc import connect_rpc
+from .rpc import connect_rpc
+from .conf import BitcoindConf
 
 import struct
-
-from .models import Address, BTCTransaction
 
 from decimal import Decimal
 from logging import getLogger
@@ -28,13 +27,29 @@ def sequence_increments(new_seq, topic):
     return increments
 
 
-def listen(zmqSubSocket):
+def listen(conf: BitcoindConf):
+    if 'zmqpubhashtx' not in conf.conf or 'zmqpubhashblock' not in conf.conf:
+        log.info("Did not detect zmqpubhashtx and zmqpubhashblock in conf:{}, not listening".format(conf.filename))
+        return
+
+    zmqContext = zmq.Context()
+    zmqSubSocket = zmqContext.socket(zmq.SUB)
+    zmqSubSocket.setsockopt_string(zmq.SUBSCRIBE, "hashblock")
+    zmqSubSocket.setsockopt_string(zmq.SUBSCRIBE, "hashtx")
+    # zmqSubSocket.setsockopt(zmq.SUBSCRIBE, "rawblock")
+    # zmqSubSocket.setsockopt(zmq.SUBSCRIBE, "rawtx")
+    zmqSubSocket.connect(conf.conf['zmqpubhashtx'])
+
+    rpc = connect_rpc(conf)
+
     while True:
         try:
             msg = zmqSubSocket.recv_multipart()
             topic = str(msg[0])
             if topic != "hashtx" and topic != "hashblock":
                 continue
+
+            log.info("GOT MSG: {}".format(topic))
 
             # Sequence checking
             if len(msg[-1]) == 4:
@@ -49,16 +64,15 @@ def listen(zmqSubSocket):
 
             if topic == "hashtx":
                 # TODO: Detect message type here?
-                handle_txid(hash)
+                handle_txid(hash, rpc)
             if topic == "hashblock":
-                handle_blockid(hash)
+                handle_blockid(hash, rpc)
 
         except Exception as e:
             log.exception("Uncaught exception during bitcoin ZMQ listen", exc_info=e)
 
 
-def handle_txid(txid):
-    rpc = connect_rpc()
+def handle_txid(txid, rpc):
     try:
         tx_dat = rpc.get_transaction(txid)
     except IndexError:
@@ -79,41 +93,10 @@ def handle_txid(txid):
 
         addr = det['address']
 
-        a = Address.lookup(addr)
-        if a is None:
-            log.error("tx:{} included address:{} not in db".format(txid, det['address']))
-            continue
-
         value = Decimal(det['amount'])
 
-        try:
-            btct = BTCTransaction.lookup(txid, a)
-        except BTCTransaction.MultipleObjectsReturned:
-            log.error("Multiple transaction records found for tx:{} address:{}".format(txid, addr))
-            continue
-
-        a.deactivate()
         log.info("address:{} saw {} BTC, tx:{}".format(addr, value, txid))
 
 
-def handle_blockid(blockid):
+def handle_blockid(blockid, rpc):
     log.info("Got new block:{}".format(blockid))
-
-    # Luckily this does!
-    for btct in BTCTransaction.unapplied():
-        handle_txid(btct.txid)
-
-
-def start_transaction_listener():
-    log.info("Starting transaction listener")
-    zmqContext = zmq.Context()
-    zmqSubSocket = zmqContext.socket(zmq.SUB)
-    zmqSubSocket.setsockopt(zmq.SUBSCRIBE, "hashblock")
-    zmqSubSocket.setsockopt(zmq.SUBSCRIBE, "hashtx")
-    # zmqSubSocket.setsockopt(zmq.SUBSCRIBE, "rawblock")
-    # zmqSubSocket.setsockopt(zmq.SUBSCRIBE, "rawtx")
-    zmqSubSocket.connect("tcp://bitcoin:%i" % port)
-
-    g = Greenlet(listen, zmqSubSocket)
-    g.start()
-    return g

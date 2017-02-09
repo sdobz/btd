@@ -1,18 +1,16 @@
-from django.conf import settings
-
 from gevent import sleep
 
 from . import int2bit
+from .conf import BitcoindConf
+
 from bitcoin.rpc import Proxy, InWarmupError
 from bitcoin.core import b2lx, lx
 from bitcoin.wallet import CBitcoinAddress, CBitcoinAddressError
 from bitcoin.base58 import Base58ChecksumError, InvalidBase58Error
-from httplib import CannotSendRequest, BadStatusLine
+from http.client import CannotSendRequest, BadStatusLine
 from logging import getLogger
+
 log = getLogger(__name__)
-
-
-conn = None
 
 
 def address_valid(address):
@@ -23,23 +21,27 @@ def address_valid(address):
         return False
 
 
-def connect_rpc():
+conn = {}
+
+
+def connect_rpc(conf: BitcoindConf):
     global conn
-    if conn is None:
-        conn = Bitcoin()
-    return conn
+    if conf.filename not in conn:
+        conn[conf.filename] = Bitcoin(conf)
+    return conn[conf.filename]
 
 
 def retry_once(f):
     def attempt(self, *args, **kwargs):
         try:
-            return f(self, *args, **kwargs)
-        except (CannotSendRequest, BadStatusLine):
-            self.connect()
             try:
                 return f(self, *args, **kwargs)
             except (CannotSendRequest, BadStatusLine):
-                log.error("Error sending request for {}, {}".format(args, kwargs))
+                self.connect()
+                try:
+                    return f(self, *args, **kwargs)
+                except (CannotSendRequest, BadStatusLine):
+                    log.error("Error sending request for {}, {}".format(args, kwargs))
         except InWarmupError:
             while True:
                 log.info("Bitcoin still warming up, retrying...")
@@ -48,18 +50,28 @@ def retry_once(f):
                     return f(self, *args, **kwargs)
                 except InWarmupError:
                     continue
+
     return attempt
 
 
 class Bitcoin(object):
     p = None
 
-    def __init__(self):
+    def __init__(self, conf):
+        self.conf = conf
         self.connect()
 
     def connect(self):
-        self.p = Proxy(service_url=('%s://%s:%s@%s:%d' %
-                    ('http', settings.BITCOIN_RPC_USER, settings.BITCOIN_RPC_PASSWORD, 'bitcoin', 18332)))
+        self.p = Proxy(service_url=('{}://{}:{}@{}:{}'.format(
+            'http',
+            self.conf.conf['rpcuser'],
+            self.conf.conf['rpcpassword'],
+            self.conf.conf['rpcbind'],
+            self.conf.conf['rpcport'])))
+
+    @retry_once
+    def get_info(self):
+        return self.p.getinfo()
 
     @retry_once
     def create_address(self):

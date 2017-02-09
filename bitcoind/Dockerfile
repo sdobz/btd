@@ -34,10 +34,16 @@ RUN set -ex \
 	# remove build dependencies
 	&& apt-get purge -y --auto-remove wget
 
-ENV BITCOIN_DATA /data
-RUN mkdir $BITCOIN_DATA \
-	&& chown bitcoin:bitcoin $BITCOIN_DATA \
-	&& ln -s $BITCOIN_DATA /home/bitcoin/.bitcoin
+RUN set -ex \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends python3 python3-dev python3-pip build-essential libzmq3-dev
 
-COPY bitcoin.conf /home/bitcoin/bitcoin.conf
-CMD gosu bitcoin bitcoind -conf=/home/bitcoin/bitcoin.conf
+# Currently using a volume instead of this for rapid development
+# COPY ./listener /opt/listener
+COPY ./listener/requirements.pip /opt/listener/requirements.pip
+RUN pip3 install -r /opt/listener/requirements.pip
+
+RUN mkdir -p /var/bitcoin/regtest.conf && chown bitcoin:bitcoin -R /var/bitcoin
+COPY conf/ /etc/bitcoin
+
+CMD gosu bitcoin python3 /opt/listener/main.py

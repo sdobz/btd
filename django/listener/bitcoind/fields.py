@@ -2,6 +2,8 @@ import re
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from decimal import Decimal
+
 import hashlib
 
 

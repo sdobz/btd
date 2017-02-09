@@ -1,14 +1,12 @@
 import zmq.green as zmq
 
-from gevent import Greenlet, sleep
+from gevent import Greenlet
 
 from ..bitcoind.rpc import connect_rpc
 
 import struct
 
 from .models import Address, BTCTransaction
-
-from django.conf import settings
 
 from decimal import Decimal
 from logging import getLogger
@@ -19,6 +17,16 @@ import binascii
 # TODO: move to settings
 port = 8330
 
+seq = {}
+
+
+def sequence_increments(new_seq, topic):
+    global seq
+    old = seq[topic] if topic in seq else 0
+    increments = new_seq - old == 1
+    seq[topic] = new_seq
+    return increments
+
 
 def listen(zmqSubSocket):
     while True:
@@ -28,29 +36,28 @@ def listen(zmqSubSocket):
             if topic != "hashtx" and topic != "hashblock":
                 continue
 
-            body = msg[1]
+            # Sequence checking
+            if len(msg[-1]) == 4:
+                new_seq = struct.unpack('<I', msg[-1])[-1]
 
+            if not sequence_increments(new_seq, topic):
+                log.warning("bitcoin:sequence".format(
+                    topic, new_seq))
+
+            body = msg[1]
             hash = binascii.b2a_hex(body)
 
             if topic == "hashtx":
+                # TODO: Detect message type here?
                 handle_txid(hash)
             if topic == "hashblock":
                 handle_blockid(hash)
-
-            if len(msg[-1]) == 4:
-                new_seq = struct.unpack('<I', msg[-1])[-1]
-                if not sequence_increments(new_seq, topic):
-                    log.warning("bitcoin:sequence:{} - {} - Detected missed messages".format(
-                        topic, new_seq))
 
         except Exception as e:
             log.exception("Uncaught exception during bitcoin ZMQ listen", exc_info=e)
 
 
-@profile_function
 def handle_txid(txid):
-    log.info("Got new transaction:{}".format(txid))
-    # Should be imdepotent (Warning: malleability attack not compensated for)
     rpc = connect_rpc()
     try:
         tx_dat = rpc.get_transaction(txid)
@@ -86,17 +93,7 @@ def handle_txid(txid):
             continue
 
         a.deactivate()
-
-        apply = should_apply_tx(tx_dat)
-        if btct is None:
-            log.info("Recording tx:{}".format(txid))
-            btct = BTCTransaction.create(txid=txid, address=a, amount=value)
-
-        if apply and not btct.applied:
-            log.info("address:{} received {} BTC, tx:{}".format(addr, value, txid))
-            btct.apply()
-        else:
-            log.info("address:{} saw {} BTC, tx:{}".format(addr, value, txid))
+        log.info("address:{} saw {} BTC, tx:{}".format(addr, value, txid))
 
 
 def handle_blockid(blockid):

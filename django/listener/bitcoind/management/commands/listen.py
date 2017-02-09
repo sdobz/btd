@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 
-from ..listener import start_transaction_listener
+from ...listener import start_transaction_listener
 
 from gevent import joinall
 

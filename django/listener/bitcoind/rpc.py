@@ -62,38 +62,31 @@ class Bitcoin(object):
                     ('http', settings.BITCOIN_RPC_USER, settings.BITCOIN_RPC_PASSWORD, 'bitcoin', 18332)))
 
     @retry_once
-    @profile_function
     def create_address(self):
         return str(self.p.getnewaddress())
 
     @retry_once
-    @profile_function
     def get_address_balance(self, addr, minconf=0):
         return int2bit(self.p.getreceivedbyaddress(addr, minconf=minconf))
 
     @retry_once
-    @profile_function
     def list_address_amounts(self, minconf=0, include_empty=True):
         # TODO: PR
         addresses = self.p._call('listreceivedbyaddress', minconf, include_empty)
         return dict((a['address'], a['amount']) for a in addresses if a['confirmations'] >= minconf)
 
     @retry_once
-    @profile_function
     def send(self, addr, amount):
         return b2lx(self.p.sendtoaddress(addr, amount))
 
     @retry_once
-    @profile_function
     def get_transaction(self, txid):
         return self.p.gettransaction(lx(txid))
 
     @retry_once
-    @profile_function
     def get_block(self, blockid):
         return self.p.getblock(lx(blockid))
 
     @retry_once
-    @profile_function
     def get_blockchain_info(self):
         return self.p._call('getblockchaininfo')

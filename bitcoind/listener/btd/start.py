@@ -34,9 +34,8 @@ def start_one(conf: BitcoindConf):
             except ConnectionRefusedError:
                 log.info("Retrying...")
                 sleep(1)
-    log.info("RPC Connection successful, starting listener")
 
-
+    log.info("Connection successful, bitcoind:{} is running".format(conf.filename))
 
 
 def start_all():

@@ -7,7 +7,9 @@ import re
 
 
 class BitcoindConf:
-    # matches thing=otherthing but strips whitespace
+    """
+    Wrapper around a bitcoind configuration file
+    """
     conf_line = re.compile('\s*([a-z]*)\s*=\s*(.*)')
 
     @classmethod
@@ -34,6 +36,10 @@ class BitcoindConf:
     @classmethod
     def enumerate_confs(cls):
         return (cls.from_file(fn) for fn in cls.list_conf_files())
+
+    @classmethod
+    def get_conf(cls, filename):
+        return
 
     def __init__(self, filename, conf):
         self.filename = filename

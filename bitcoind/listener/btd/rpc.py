@@ -102,3 +102,7 @@ class Bitcoin(object):
     @retry_once
     def get_blockchain_info(self):
         return self.p._call('getblockchaininfo')
+
+    @retry_once
+    def generate(self, numblocks):
+        return self.p.generate(numblocks)

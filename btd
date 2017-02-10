@@ -33,6 +33,10 @@ sub_rebuild() {
     sub_compose build $@ && sub_compose up -d $@
 }
 
+sub_test() {
+    sub_compose run --rm bitcoin python3 /opt/listener/btd/test.py
+}
+
 sub_rpc() {
     source ./env
 

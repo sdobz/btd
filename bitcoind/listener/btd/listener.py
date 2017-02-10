@@ -1,7 +1,5 @@
 import zmq.green as zmq
 
-from gevent import Greenlet
-
 from .rpc import connect_rpc
 from .conf import BitcoindConf
 
@@ -27,7 +25,7 @@ def sequence_increments(new_seq, topic):
     return increments
 
 
-def listen(conf: BitcoindConf):
+def listen_forever(conf: BitcoindConf):
     if 'zmqpubhashtx' not in conf.conf or 'zmqpubhashblock' not in conf.conf:
         log.info("Did not detect zmqpubhashtx and zmqpubhashblock in conf:{}, not listening".format(conf.filename))
         return

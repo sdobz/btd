@@ -12,6 +12,7 @@ services:
     volumes:
       - bitcoin:/var/bitcoin
       - ./bitcoind/listener:/opt/listener
+      - ./varbtd/:/var/btd/
     ports:
       - "8333"
       - "18333"

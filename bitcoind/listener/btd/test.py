@@ -1,10 +1,12 @@
 import unittest
 
+from .bitcoind import load_confs, start_bitcoind
+
 
 class TestApplication:
-    def __init__(self):
+    def __init__(self, rpc):
         self.addresses = {}
-        self.client = None  # Make client and connect
+        self.rpc = rpc
 
     def reset(self):
         pass
@@ -30,8 +32,13 @@ class TestApplication:
 class TestBTD(unittest.TestCase):
     def setUp(self):
         # Fire up server listeners
+        confs = load_confs()
+        assert 'miner.conf' in confs and 'regtest.conf' in confs
         # Make client
+        self.app = TestApplication()
         # Start miner, get rpc connection
+
+        self.miner_rpc
         # Get miner height, premine if <100
         # TODO: consider blockchain state
         pass

@@ -1,5 +1,5 @@
 from . import settings
-from . import int2bit
+from . import int2bit, bit2int
 
 from bitcoin.rpc import Proxy, InWarmupError
 from bitcoin.core import b2lx, lx
@@ -10,6 +10,7 @@ import os
 from os import listdir, path, makedirs
 import subprocess
 import re
+import shutil
 
 from logging import getLogger
 log = getLogger(__name__)
@@ -70,6 +71,12 @@ class BitcoindConf:
         dd = path.join(settings.BITCOIN_DATA_DIR, self.filename)
         makedirs(dd, mode=0o700, exist_ok=True)
         return dd
+
+    def clean_regtest(self):
+        rtd = path.join(self.datadir(), 'regtest')
+        if path.exists(rtd):
+            log.info("Removing regtest directory:{}".format(rtd))
+            shutil.rmtree(rtd)
 
 
 def start_bitcoind(conf: BitcoindConf):
@@ -169,7 +176,7 @@ class BitcoindRPC(object):
 
     @try_robustly
     def send(self, addr, amount):
-        return b2lx(self.p.sendtoaddress(addr, amount))
+        return b2lx(self.p.sendtoaddress(addr, bit2int(amount)))
 
     @try_robustly
     def get_transaction(self, txid):
@@ -190,3 +197,11 @@ class BitcoindRPC(object):
     @try_robustly
     def list_transactions(self, count=10, skip=0):
         return self.p._call('listtransactions', '*', count, skip)
+
+    @try_robustly
+    def get_peer_info(self):
+        return self.p._call('getpeerinfo')
+
+    @try_robustly
+    def get_wallet_info(self):
+        return self.p._call('getwalletinfo')

@@ -15,7 +15,7 @@ sub_help() {
     echo "    bash <container>    - Attach bash to a running container"
     echo ""
 }
-
+echo
 sub_start() {
     sub_compose build ${SERVICES}
     sub_compose up --remove-orphans -d ${SERVICES}
@@ -34,7 +34,7 @@ sub_rebuild() {
 }
 
 sub_test() {
-    sub_compose run --rm bitcoin python3 /opt/listener/btd/test.py
+    sub_compose run --rm bitcoin python3 /opt/listener/test.py
 }
 
 sub_rpc() {

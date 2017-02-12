@@ -21,6 +21,103 @@ import json
 from uuid import uuid4
 
 
+class BtdStorage:
+    AddrRow = namedtuple('addr', 'rowid address context contexthash created modified')
+    TxRow = namedtuple('tx', 'rowid uuid txid addr_id amount confirmations orig silenced created modified')
+
+    def __init__(self, conf: BitcoindConf):
+        self.conf = conf
+        self.db = sqlite3.connect(path.join(settings.BTD_SQLITE_DIR, conf.filename + '.sqlite'), detect_types=sqlite3.PARSE_DECLTYPES)
+        self.db.execute('CREATE TABLE IF NOT EXISTS addr ('
+                        'id INTEGER PRIMARY KEY,'
+                        'address VARCHAR(34) UNIQUE,'
+                        'context BLOB NULL,'
+                        'contexthash VARCHAR(32) NULL,'
+                        'created DATETIME,'
+                        'modified DATETIME)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS tx ('
+                        'id INTEGER PRIMARY KEY,'
+                        'uuid VARCHAR(36),'
+                        'txid VARCHAR(64),'
+                        'addr_id INTEGER,'
+                        'amount DECIMAL,'
+                        'confirmations INTEGER,'
+                        'orig BLOB,'
+                        'silenced BOOL,'
+                        'created DATETIME,'
+                        'modified DATETIME,'
+                        'FOREIGN KEY (addr_id) REFERENCES addr(id))')
+
+    def lookup_unused_address(self, context):
+        contexthash = self.hash_context(context)
+
+        return self.db.execute(
+            'SELECT address FROM addr'
+            ' LEFT JOIN tx ON tx.addr_id = addr.rowid'
+            ' WHERE addr.contexthash=? AND tx.addr_id IS NULL'
+            ' LIMIT 1', contexthash).fetchone()
+
+    def lookup_context(self, address):
+        return self.db.execute(
+            'SELECT context FROM addr WHERE address=?', address).fetchone()
+
+    def get_address_rowid(self, address):
+        rowid = self.db.execute('SELECT rowid FROM addr WHERE address=?', address).fetchone()
+        if rowid is None:
+            self.store_address(address)
+            rowid = self.db.execute('SELECT rowid FROM addr WHERE address=?', address).fetchone()
+        return rowid
+
+    def store_address(self, address, context=None):
+        c = self.db.cursor()
+        contexthash = self.hash_context(context) if context is not None else None
+        now = datetime.now()
+        c.execute('UPDATE addr SET'
+                  ' context=?, contexthash=?, modified=? WHERE addr=?',
+                  (context, contexthash, now, address))
+        c.execute('INSERT INTO addr (addr, context, contexthash, created, modified)'
+                  ' SELECT ?, ?, ?, ?, ? WHERE (SELECT Changes() = 0)',
+                  (address, context, contexthash, now, now))
+        self.db.commit()
+        c.close()
+        return address
+
+    def load_txs(self, txids):
+        tx_rows = {}
+        c = self.db.cursor()
+        c.execute('SELECT ? FROM tx WHERE txid IN ?',
+                  (','.join(self.TxRow._fields), txids))
+        for row in c:
+            tx = self.TxRow._make(row)
+            tx_rows[tx.txid] = tx
+
+        return tx_rows
+
+    def store_tx_dat(self, tx_dat):
+        addrid = self.get_address_rowid(tx_dat['address'])
+        amount = Decimal(tx_dat['amount'])
+
+        c = self.db.cursor()
+        now = datetime.now()
+        c.execute('UPDATE tx SET'
+                  ' addr_id=?, amount=?, confirmations=?, orig=?, silenced=?, modified=? WHERE txid=?',
+                  (addrid, amount, tx_dat['confirmations'], json.dumps(tx_dat), False, now, tx_dat['txid']))
+        c.execute('INSERT INTO tx (uuid, txid, addr_id,  amount, confirmations, orig, silenced, created, modified)'
+                  ' SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE (SELECT Changes() = 0)',
+                  (uuid4(), tx_dat['txid'], addrid, amount, tx_dat['confirmations'], json.dumps(tx_dat), False, now, now))
+        self.db.commit()
+        c.close()
+
+    @staticmethod
+    def hash_context(context):
+        return md5(context).hexdigest()
+
+sqlite3.register_adapter(Decimal, lambda d: str(d))
+sqlite3.register_converter("DECIMAL", lambda s: Decimal(s))
+sqlite3.register_adapter(datetime, lambda dt: dt.isoformat(dt))
+sqlite3.register_converter("DATETIME", lambda s: dateutil_parse(s))
+
+
 class BtdListener:
     TxInfo = namedtuple('TxInfo', 'uuid change category txid addr context amount confirmations orig')
 
@@ -165,96 +262,6 @@ class BtdRPC:
         self.rpc.send(address, amount)
 
 
-class BtdStorage:
-    AddrRow = namedtuple('addr', 'rowid address context contexthash created modified')
-    TxRow = namedtuple('tx', 'rowid uuid txid addrid amount confirmations orig silenced created modified')
-
-    def __init__(self, conf: BitcoindConf):
-        self.conf = conf
-        self.db = sqlite3.connect(path.join(settings.BTD_SQLITE_DIR, conf.filename + '.sqlite'), detect_types=sqlite3.PARSE_DECLTYPES)
-        self.db.execute('CREATE TABLE IF NOT EXISTS addr ('
-                        'address VARCHAR(34) UNIQUE,'
-                        'context BLOB NULL,'
-                        'contexthash VARCHAR(32) NULL,'
-                        'created DATETIME,'
-                        'modified DATETIME)')
-        self.db.execute('CREATE TABLE IF NOT EXISTS tx ('
-                        'uuid VARCHAR(36),'
-                        'txid VARCHAR(64),'
-                        'FOREIGN KEY (addrid) REFERENCES addr(rowid),'
-                        'amount DECIMAL,'
-                        'confirmations INTEGER,'
-                        'orig BLOB,'
-                        'silenced BOOL,'
-                        'created DATETIME,'
-                        'modified DATETIME)')
-
-    def lookup_unused_address(self, context):
-        contexthash = self.hash_context(context)
-
-        return self.db.execute(
-            'SELECT address FROM addr'
-            ' LEFT JOIN tx ON tx.addrid = addr.rowid'
-            ' WHERE addr.contexthash=? AND tx.addrid IS NULL'
-            ' LIMIT 1', contexthash).fetchone()
-
-    def lookup_context(self, address):
-        return self.db.execute(
-            'SELECT context FROM addr WHERE address=?', address).fetchone()
-
-    def get_address_rowid(self, address):
-        rowid = self.db.execute('SELECT rowid FROM addr WHERE address=?', address).fetchone()
-        if rowid is None:
-            rowid =
-
-    def store_address(self, addr, context=None):
-        c = self.db.cursor()
-        contexthash = self.hash_context(context) if context is not None else None
-        now = datetime.now()
-        c.execute('UPDATE addr SET'
-                  ' context=?, contexthash=?, modified=? WHERE addr=?',
-                  (context, contexthash, now, addr))
-        c.execute('INSERT INTO addr (addr, context, contexthash, created, modified)'
-                  ' SELECT ?, ?, ?, ?, ? WHERE (SELECT Changes() = 0)',
-                  (addr, context, contexthash, now, now))
-        self.db.commit()
-        c.close()
-        return addr
-
-    def load_txs(self, txids):
-        tx_rows = {}
-        c = self.db.cursor()
-        c.execute('SELECT ? FROM tx WHERE txid IN ?',
-                  (','.join(self.TxRow._fields), txids))
-        for row in c:
-            tx = self.TxRow._make(row)
-            tx_rows[tx.txid] = tx
-
-        return tx_rows
-
-    def store_tx_dat(self, tx_dat):
-        addrid = self.get_address_rowid(tx_dat['address'])
-        amount = Decimal(tx_dat['amount'])
-
-        c = self.db.cursor()
-        now = datetime.now()
-        c.execute('UPDATE tx SET'
-                  ' addrid=?, amount=?, confirmations=?, orig=?, silenced=?, modified=? WHERE txid=?',
-                  (addrid, amount, tx_dat['confirmations'], json.dumps(tx_dat), False, now, tx_dat['txid']))
-        c.execute('INSERT INTO tx (uuid, txid, addrid,  amount, confirmations, orig, silenced, created, modified)'
-                  ' SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE (SELECT Changes() = 0)',
-                  (uuid4(), tx_dat['txid'], addrid, amount, tx_dat['confirmations'], json.dumps(tx_dat), False, now, now))
-        self.db.commit()
-        c.close()
-
-    @staticmethod
-    def hash_context(context):
-        return md5(context).hexdigest()
-
-sqlite3.register_adapter(Decimal, lambda d: str(d))
-sqlite3.register_converter("DECIMAL", lambda s: Decimal(s))
-sqlite3.register_adapter(datetime, lambda dt: dt.isoformat(dt))
-sqlite3.register_converter("DATETIME", lambda s: dateutil_parse(s))
 
 
 """
